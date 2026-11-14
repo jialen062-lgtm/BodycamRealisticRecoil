@@ -1,4 +1,3 @@
-
 name: Build BodycamRealisticRecoil
 
 on:
@@ -50,6 +49,56 @@ jobs:
           fi
 
           echo "PROJECT_DIR=$(dirname "$BUILD_FILE")" >> "$GITHUB_ENV"
+
+      - name: Patch Mixin to avoid Args$1
+        run: |
+          mkdir -p "$PROJECT_DIR/src/main/java/com/jialen/bodycamrecoil/mixin"
+          cat > "$PROJECT_DIR/src/main/java/com/jialen/bodycamrecoil/mixin/AbstractGunItemMixin.java" <<'JAVA'
+          package com.jialen.bodycamrecoil.mixin;
+
+          import com.jialen.bodycamrecoil.recoil.RecoilManager;
+          import com.jialen.bodycamrecoil.recoil.RecoilState;
+          import net.minecraft.world.entity.Entity;
+          import net.minecraft.world.entity.LivingEntity;
+          import net.minecraft.world.entity.projectile.Projectile;
+          import org.spongepowered.asm.mixin.Mixin;
+          import org.spongepowered.asm.mixin.Pseudo;
+          import org.spongepowered.asm.mixin.injection.At;
+          import org.spongepowered.asm.mixin.injection.Redirect;
+
+          @Pseudo
+          @Mixin(targets = "com.tacz.guns.api.item.gun.AbstractGunItem")
+          public abstract class AbstractGunItemMixin {
+              @Redirect(
+                      method = "doBulletSpread",
+                      remap = false,
+                      at = @At(
+                              value = "INVOKE",
+                              target = "Lnet/minecraft/world/entity/projectile/Projectile;shootFromRotation(Lnet/minecraft/world/entity/Entity;FFFFF)V",
+                              remap = true
+                      )
+              )
+              private void bodycam$applyRealProjectileRecoil(
+                      Projectile projectile,
+                      Entity shooter,
+                      float pitch,
+                      float yaw,
+                      float roll,
+                      float velocity,
+                      float inaccuracy
+              ) {
+                  if (shooter instanceof LivingEntity livingEntity) {
+                      RecoilState recoil = RecoilManager.get(livingEntity);
+                      if (recoil != null) {
+                          pitch += recoil.pitch();
+                          yaw += recoil.yaw();
+                      }
+                  }
+
+                  projectile.shootFromRotation(shooter, pitch, yaw, roll, velocity, inaccuracy);
+              }
+          }
+          JAVA
 
       - name: Build mod
         run: |
